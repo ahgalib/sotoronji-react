@@ -24,7 +24,7 @@ const stats = [
 
 export function ArtisanSection() {
   return (
-    <section className="py-20 lg:py-28 bg-foreground text-background overflow-hidden">
+    <section id="artisans" className="py-20 lg:py-28 bg-foreground text-background overflow-hidden">
       <div className="container mx-auto px-4 lg:px-8">
         <div className="grid lg:grid-cols-2 gap-12 lg:gap-20 items-center">
           {/* Content */}

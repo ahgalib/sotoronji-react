@@ -6,7 +6,7 @@ import { ArrowRight, Play } from "lucide-react";
 
 export function OurStory() {
   return (
-    <section className="py-20 lg:py-28 bg-background overflow-hidden">
+    <section id="story" className="py-20 lg:py-28 bg-background overflow-hidden">
       <div className="container mx-auto px-4 lg:px-8">
         <div className="grid lg:grid-cols-2 gap-12 lg:gap-20 items-center">
           {/* Images */}
