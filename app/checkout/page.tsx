@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -26,8 +26,9 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
+import { useAuth } from "@/lib/auth-context";
 import { useCart } from "@/lib/cart-context";
-import { formatPrice } from "@/lib/products";
+import { formatPrice, products, Product } from "@/lib/products";
 import {
   ChevronRight,
   Home,
@@ -55,10 +56,18 @@ const divisions = [
 
 export default function CheckoutPage() {
   const router = useRouter();
+  const { user } = useAuth();
   const { items, getCartTotal, clearCart } = useCart();
   const [isProcessing, setIsProcessing] = useState(false);
   const [orderComplete, setOrderComplete] = useState(false);
   const [orderId, setOrderId] = useState("");
+  const [upsoldItems, setUpsoldItems] = useState<Product[]>([]);
+  const [completedOrderTotal, setCompletedOrderTotal] = useState(0);
+  
+  const [existingUser, setExistingUser] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [checkoutPassword, setCheckoutPassword] = useState("");
+  const [mockNewUserPassword, setMockNewUserPassword] = useState("");
 
   const [formData, setFormData] = useState({
     email: "",
@@ -82,6 +91,32 @@ export default function CheckoutPage() {
   const giftWrapFee = formData.giftWrap ? 50 : 0;
   const total = subtotal + shipping + giftWrapFee;
 
+  // Pre-fill if logged in
+  useEffect(() => {
+    if (user && !formData.email) {
+      setFormData(prev => ({ 
+        ...prev, 
+        email: user.email, 
+        firstName: user.name.split(" ")[0] || "", 
+        lastName: user.name.split(" ")[1] || "" 
+      }));
+    }
+  }, [user]);
+
+  const handleEmailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setFormData((prev) => ({ ...prev, email: value }));
+    
+    // Static mock logic for existing user
+    if (!user && value.toLowerCase() === "user@example.com") {
+      setExistingUser(true);
+      setShowPassword(true);
+    } else {
+      setExistingUser(false);
+      setShowPassword(false);
+    }
+  };
+
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
   ) => {
@@ -101,67 +136,128 @@ export default function CheckoutPage() {
 
     // Generate order ID
     const newOrderId = `SHT-${Date.now().toString(36).toUpperCase()}`;
+    
+    if (!user && !existingUser && formData.email) {
+      const tempPass = Math.random().toString(36).slice(-8);
+      setMockNewUserPassword(tempPass);
+    }
+
     setOrderId(newOrderId);
+    setCompletedOrderTotal(total);
     setOrderComplete(true);
     clearCart();
     setIsProcessing(false);
   };
 
   if (orderComplete) {
+    const upsellTotal = completedOrderTotal + upsoldItems.reduce((acc, item) => acc + item.price, 0);
+    const discountThreshold = 4000;
+    const progress = Math.min((upsellTotal / discountThreshold) * 100, 100);
+    const isDiscountUnlocked = upsellTotal >= discountThreshold;
+
+    // Get 3 random products for upsell that aren't already upsold
+    const availableUpsells = products.filter(p => !upsoldItems.find(u => u.id === p.id)).slice(0, 3);
+
+    const handleUpsellBuy = (product: Product) => {
+      setUpsoldItems(prev => [...prev, product]);
+    };
+
     return (
       <main className="min-h-screen bg-background">
         <Navbar />
         <section className="pt-32 pb-20 px-4 md:px-8 lg:px-16">
-          <div className="max-w-2xl mx-auto text-center">
-            <div className="w-20 h-20 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-6">
-              <CheckCircle2 className="w-10 h-10 text-green-600" />
+          <div className="max-w-4xl mx-auto">
+            {/* Header */}
+            <div className="text-center mb-12">
+              <div className="w-20 h-20 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-6">
+                <CheckCircle2 className="w-10 h-10 text-green-600" />
+              </div>
+              <h1 className="font-serif text-3xl md:text-4xl mb-4">
+                Thank You for Your Order!
+              </h1>
+              <p className="text-muted-foreground text-lg mb-2">
+                Your order <span className="font-semibold text-foreground">{orderId}</span> has been confirmed.
+              </p>
+              {mockNewUserPassword && (
+                <div className="bg-primary/10 border-l-4 border-primary p-4 rounded-r-lg mt-6 text-left inline-block w-full max-w-md">
+                  <p className="font-medium text-primary">Account Created Successfully!</p>
+                  <p className="text-sm">We've created an account to easily track your orders.</p>
+                  <p className="text-sm mt-2">Temporary Password: <span className="font-serif font-bold tracking-wider">{mockNewUserPassword}</span></p>
+                </div>
+              )}
             </div>
-            <h1 className="font-serif text-3xl md:text-4xl mb-4">
-              Thank You for Your Order!
-            </h1>
-            <p className="text-muted-foreground text-lg mb-2">
-              Your order has been successfully placed.
-            </p>
-            <p className="text-muted-foreground mb-8">
-              Order ID: <span className="font-semibold text-foreground">{orderId}</span>
-            </p>
 
-            <div className="bg-card border rounded-xl p-6 text-left mb-8">
-              <h3 className="font-medium mb-4">What happens next?</h3>
-              <div className="space-y-4">
-                <div className="flex gap-4">
-                  <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                    <span className="text-sm font-medium text-primary">1</span>
+            {/* Discount Progress */}
+            <div className="bg-primary/5 border border-primary/20 rounded-xl p-8 mb-12 text-center">
+              <h3 className="font-serif text-2xl mb-4">
+                {isDiscountUnlocked 
+                  ? "🎉 You've unlocked a 10% discount on your next purchase!" 
+                  : "Unlock 10% Discount"}
+              </h3>
+              {!isDiscountUnlocked && (
+                <p className="text-muted-foreground mb-6">
+                  Add {formatPrice(discountThreshold - upsellTotal)} more to your current order to unlock a 10% discount on your next purchase!
+                </p>
+              )}
+              <div className="max-w-2xl mx-auto relative h-4 bg-muted rounded-full overflow-hidden mb-2">
+                <div 
+                  className="absolute top-0 left-0 h-full bg-primary transition-all duration-700 ease-out"
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
+              <p className="text-sm font-medium text-right max-w-2xl mx-auto">
+                {formatPrice(upsellTotal)} / {formatPrice(discountThreshold)}
+              </p>
+            </div>
+
+            {/* Upsell Products */}
+            <div className="mb-12">
+              <h3 className="font-serif text-2xl mb-6 text-center">Add to your order with 1-click</h3>
+              <p className="text-muted-foreground text-center mb-8">No extra shipping fees when you add these items now.</p>
+              
+              <div className="grid md:grid-cols-3 gap-6">
+                {availableUpsells.map(product => (
+                  <div key={product.id} className="bg-card border rounded-xl overflow-hidden hover:shadow-lg transition-shadow flex flex-col">
+                    <div className="relative aspect-square">
+                      <Image
+                        src={product.images[0]}
+                        alt={product.name}
+                        fill
+                        className="object-cover"
+                      />
+                    </div>
+                    <div className="p-4 flex-grow flex flex-col justify-between">
+                      <div>
+                        <h4 className="font-medium line-clamp-1 mb-1">{product.name}</h4>
+                      </div>
+                      <div className="flex justify-between items-center mt-4">
+                        <span className="font-semibold text-primary">{formatPrice(product.price)}</span>
+                        <Button size="sm" onClick={() => handleUpsellBuy(product)}>
+                          Add to Order
+                        </Button>
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <p className="font-medium">Order Confirmation</p>
-                    <p className="text-sm text-muted-foreground">
-                      You will receive an email confirmation shortly at {formData.email || "your email"}.
-                    </p>
-                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Summary of current order including upsells */}
+            <div className="bg-card border rounded-xl p-6 mb-8">
+              <h3 className="font-medium mb-4">Order Summary</h3>
+              <div className="flex justify-between items-center py-3 border-b border-border">
+                <span className="text-muted-foreground">Initial Order Total</span>
+                <span>{formatPrice(completedOrderTotal)}</span>
+              </div>
+              {upsoldItems.map(item => (
+                <div key={item.id} className="flex justify-between items-center py-3 border-b border-border">
+                  <span className="text-muted-foreground">+ {item.name}</span>
+                  <span>{formatPrice(item.price)}</span>
                 </div>
-                <div className="flex gap-4">
-                  <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                    <span className="text-sm font-medium text-primary">2</span>
-                  </div>
-                  <div>
-                    <p className="font-medium">Order Processing</p>
-                    <p className="text-sm text-muted-foreground">
-                      Our artisans will carefully prepare your handcrafted items (1-2 business days).
-                    </p>
-                  </div>
-                </div>
-                <div className="flex gap-4">
-                  <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                    <span className="text-sm font-medium text-primary">3</span>
-                  </div>
-                  <div>
-                    <p className="font-medium">Delivery</p>
-                    <p className="text-sm text-muted-foreground">
-                      Your order will be delivered within 3-5 business days.
-                    </p>
-                  </div>
-                </div>
+              ))}
+              <div className="flex justify-between items-center py-3 font-semibold text-lg">
+                <span>Final Total</span>
+                <span className="text-primary">{formatPrice(upsellTotal)}</span>
               </div>
             </div>
 
@@ -170,11 +266,6 @@ export default function CheckoutPage() {
                 <Button size="lg" className="gap-2 w-full sm:w-auto">
                   Continue Shopping
                   <ArrowRight className="w-4 h-4" />
-                </Button>
-              </Link>
-              <Link href="/">
-                <Button variant="outline" size="lg" className="w-full sm:w-auto">
-                  Back to Home
                 </Button>
               </Link>
             </div>
@@ -247,14 +338,15 @@ export default function CheckoutPage() {
                   <h2 className="font-serif text-xl mb-6">Contact Information</h2>
                   <div className="grid md:grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="email">Email Address *</Label>
+                      <Label htmlFor="email">Email Address * {(!user && !existingUser) && <span className="text-xs text-muted-foreground ml-2 font-normal">(We'll mock register you)</span>}</Label>
                       <Input
                         id="email"
                         name="email"
                         type="email"
-                        placeholder="your@email.com"
+                        placeholder="your@email.com (Try user@example.com)"
                         value={formData.email}
-                        onChange={handleInputChange}
+                        onChange={handleEmailChange}
+                        disabled={!!user}
                         required
                       />
                     </div>
@@ -270,6 +362,28 @@ export default function CheckoutPage() {
                         required
                       />
                     </div>
+                    {/* Password Field for Auth Flow */}
+                    {!user && showPassword && (
+                      <div className="space-y-2 md:col-span-2">
+                        <div className="flex justify-between items-center">
+                          <Label htmlFor="checkoutPassword">Password *</Label>
+                          {existingUser && (
+                            <button type="button" className="text-xs text-primary hover:underline">
+                              Forgot Password?
+                            </button>
+                          )}
+                        </div>
+                        <Input
+                          id="checkoutPassword"
+                          type="password"
+                          placeholder="Your account password"
+                          value={checkoutPassword}
+                          onChange={(e) => setCheckoutPassword(e.target.value)}
+                          required={existingUser}
+                        />
+                        <p className="text-xs text-muted-foreground">Welcome back! Please enter your password to continue checkout.</p>
+                      </div>
+                    )}
                   </div>
                 </div>
 
